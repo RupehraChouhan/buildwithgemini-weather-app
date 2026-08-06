@@ -171,7 +171,42 @@ function renderReply(b, parts) {
   const a2ui = parts.filter(p => p && p.kind === "a2ui" && p.data).map(p => p.data);
 
   const textStr = texts.join("\n").trim();
-  if (textStr) b.appendChild(el("div", null, textStr));
+  if (textStr) {
+    const container = el("div");
+    const imgRegex = /!\[(.*?)\]\(((https?:\/\/.*?))\)/g;
+    let lastIndex = 0;
+    let match;
+    let hasImages = false;
+    
+    while ((match = imgRegex.exec(textStr)) !== null) {
+      hasImages = true;
+      const textBefore = textStr.substring(lastIndex, match.index);
+      if (textBefore.trim()) {
+        const textNode = el("div", null);
+        textNode.style.whiteSpace = "pre-wrap";
+        textNode.textContent = textBefore;
+        container.appendChild(textNode);
+      }
+      const img = el("img", "a2img");
+      img.src = match[2];
+      img.alt = match[1] || "Weather image";
+      img.style.marginTop = ".6rem";
+      img.style.display = "block";
+      img.style.borderRadius = "8px";
+      img.style.maxWidth = "100%";
+      container.appendChild(img);
+      lastIndex = imgRegex.lastIndex;
+    }
+    
+    const textAfter = textStr.substring(lastIndex);
+    if (textAfter.trim() || !hasImages) {
+      const textNode = el("div", null);
+      textNode.style.whiteSpace = "pre-wrap";
+      textNode.textContent = textAfter;
+      container.appendChild(textNode);
+    }
+    b.appendChild(container);
+  }
 
   if (a2ui.length) {
     b.classList.add("rich");

@@ -119,7 +119,7 @@ root_agent = Agent(
         model=MODEL,
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
-    instruction="You are a helpful AI assistant designed to provide accurate and useful information. Always present temperature values in Celsius. If the user asks for multiple locations, call the weather tool for each location and present a clean list showing the weather for all requested locations. You can also generate beautiful weather images representing the weather in a location by calling the generate_weather_image tool whenever requested or appropriate to show the weather visually.",
+    instruction="You are a helpful AI assistant designed to provide accurate and useful information. Always present temperature values in Celsius. Whenever responding to any weather request or weather question, you MUST call both the get_weather tool to get the details AND the generate_weather_image tool to create a visual representation of that weather, and present BOTH the text details and the generated weather image URL to the user.",
     tools=[get_weather, get_current_time, generate_weather_image],
 )
 

@@ -15,14 +15,19 @@
 
 import datetime
 from zoneinfo import ZoneInfo
+import uuid
 
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
-from google.genai import types
+from google.adk.tools import ToolContext
+from google.genai import types, Client
+from google.genai.types import GenerateContentConfig, Modality
+from google.cloud import storage
 
 
 MODEL = "gemini-3.6-flash"
+BUCKET_NAME = "qwiklabs-gcp-04-906b917dde28-static-assets-bucket"
 
 
 def get_weather(query: str) -> str:
@@ -58,14 +63,64 @@ def get_current_time(query: str) -> str:
     return f"The current time for query {query} is {now.strftime('%Y-%m-%d %H:%M:%S %Z%z')}"
 
 
+async def generate_weather_image(location_and_weather: str, tool_context: ToolContext) -> dict:
+    """Generates an image of the weather for a requested location and uploads it to public Cloud Storage.
+
+    Args:
+        location_and_weather: A description of the weather and location to generate an image for (e.g., 'foggy weather in San Francisco').
+
+    Returns:
+        A dictionary containing the public HTTPS URL of the generated image and status.
+    """
+    client = Client(vertexai=True, location='global')
+    
+    prompt = f"A beautiful high-quality photograph showing the weather: {location_and_weather}"
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-lite-image",
+        contents=prompt,
+        config=GenerateContentConfig(
+            response_modalities=[Modality.TEXT, Modality.IMAGE],
+        ),
+    )
+    
+    image_bytes = None
+    mime_type = "image/jpeg"
+    for part in response.candidates[0].content.parts:
+        if part.inline_data:
+            image_bytes = part.inline_data.data
+            mime_type = part.inline_data.mime_type or "image/jpeg"
+            break
+            
+    if not image_bytes:
+        return {"error": "Failed to generate image. No image data returned from model."}
+        
+    ext = "jpg" if "jpeg" in mime_type else "png"
+    image_name = f"weather_{uuid.uuid4().hex[:8]}.{ext}"
+    part = types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_bytes))
+    await tool_context.save_artifact(image_name, part)
+    
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(image_name)
+    blob.upload_from_string(image_bytes, content_type=mime_type)
+    
+    public_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{image_name}"
+    
+    return {
+        "status": "success",
+        "image_url": public_url,
+        "artifact_name": image_name
+    }
+
+
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
         model=MODEL,
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
-    instruction="You are a helpful AI assistant designed to provide accurate and useful information. Always present temperature values in Celsius. If the user asks for multiple locations, call the weather tool for each location and present a clean list showing the weather for all requested locations.",
-    tools=[get_weather, get_current_time],
+    instruction="You are a helpful AI assistant designed to provide accurate and useful information. Always present temperature values in Celsius. If the user asks for multiple locations, call the weather tool for each location and present a clean list showing the weather for all requested locations. You can also generate beautiful weather images representing the weather in a location by calling the generate_weather_image tool whenever requested or appropriate to show the weather visually.",
+    tools=[get_weather, get_current_time, generate_weather_image],
 )
 
 app = App(
